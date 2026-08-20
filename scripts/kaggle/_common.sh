@@ -9,8 +9,27 @@ gpu_check() {
   python - <<'PY'
 import torch
 assert torch.cuda.is_available(), "no CUDA GPU visible -- check Settings > Accelerator"
-print(torch.cuda.get_device_name(0), f"{torch.cuda.get_device_properties(0).total_memory/1e9:.0f} GB")
+n = torch.cuda.device_count()
+for i in range(n):
+    p = torch.cuda.get_device_properties(i)
+    print(f"GPU{i}: {torch.cuda.get_device_name(i)} {p.total_memory/1e9:.0f} GB")
+print(f"device_count={n}")
 PY
+}
+
+# Echoes `accelerate launch` flags sized to however many GPUs this session
+# actually got -- Kaggle's "T4 x2" accelerator is two physical GPUs, but a
+# plain `python script.py` only ever uses GPU0. Detecting the count instead
+# of hardcoding it means this doesn't break on a session that only hands out
+# one GPU.
+accel_launch_flags() {
+  local nproc
+  nproc=$(python -c "import torch; print(torch.cuda.device_count())")
+  local flags="--num_processes $nproc --mixed_precision bf16"
+  if [ "$nproc" -gt 1 ]; then
+    flags="$flags --multi_gpu"
+  fi
+  echo "$flags"
 }
 
 advantage_hook_check() {

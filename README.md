@@ -147,6 +147,17 @@ forward by hand:
 6. Repeat per stage. Each `stage3_grpo.sh <arm>` call is its own session so a
    timeout mid-arm only costs that one arm, not the other two.
 
+Kaggle's GPU accelerator is two T4s, not one, but a plain `python
+scripts/train_*.py` only ever drives GPU0. The stage scripts instead launch
+training with `accelerate launch` (flags sized to the detected device count
+by `accel_launch_flags` in `scripts/kaggle/_common.sh`), which runs standard
+data-parallel DDP across both GPUs when two are available and falls back to
+single-GPU cleanly when only one is. No code changes needed beyond the launch
+command -- SFTTrainer/DPOTrainer/GRPOTrainer are already distributed-aware,
+and the GRPO risk patch ([`rsp/_trl_patches/`](rsp/_trl_patches)) only touches
+the already-gathered, cross-process reward tensor, so it's correct under DDP
+unmodified.
+
 Each stage script skips work whose output already exists, so re-running a
 stage after copying `runs/` back in is safe.
 

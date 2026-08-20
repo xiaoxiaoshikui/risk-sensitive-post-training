@@ -20,5 +20,7 @@ fi
 if [ -d runs/dpo/final ]; then
   echo "[skip] runs/dpo/final already exists"
 else
-  python scripts/train_dpo.py --config configs/dpo.yaml
+  ACCEL_FLAGS=$(accel_launch_flags)
+  echo "[rsp] accelerate launch $ACCEL_FLAGS"
+  accelerate launch $ACCEL_FLAGS scripts/train_dpo.py --config configs/dpo.yaml
 fi

@@ -13,5 +13,7 @@ mkdir -p runs
 if [ -d runs/sft/final ]; then
   echo "[skip] runs/sft/final already exists"
 else
-  python scripts/train_sft.py --config configs/sft.yaml
+  ACCEL_FLAGS=$(accel_launch_flags)
+  echo "[rsp] accelerate launch $ACCEL_FLAGS"
+  accelerate launch $ACCEL_FLAGS scripts/train_sft.py --config configs/sft.yaml
 fi

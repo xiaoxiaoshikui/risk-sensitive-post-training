@@ -24,5 +24,7 @@ outdir="runs/grpo_${arm}"
 if [ -d "${outdir}/final" ]; then
   echo "[skip] ${outdir}/final already exists"
 else
-  python scripts/train_grpo.py --config "configs/grpo_${arm}.yaml"
+  ACCEL_FLAGS=$(accel_launch_flags)
+  echo "[rsp] accelerate launch $ACCEL_FLAGS"
+  accelerate launch $ACCEL_FLAGS scripts/train_grpo.py --config "configs/grpo_${arm}.yaml"
 fi

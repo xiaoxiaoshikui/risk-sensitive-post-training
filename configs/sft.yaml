@@ -26,3 +26,9 @@ training:
   logging_steps: 10
   save_strategy: "no"
   seed: 0
+  # trl>=1.x defaults SFTConfig to loss_type="chunked_nll", a memory-saving
+  # variant that patches the model's forward. With a PEFT/LoRA model this hits
+  # a bug in trl 1.10.0 (AttributeError: 'functools.partial' object has no
+  # attribute '__func__' in _patch_chunked_ce_lm_head). "nll" is the
+  # standard, well-tested loss and is functionally equivalent here.
+  loss_type: nll

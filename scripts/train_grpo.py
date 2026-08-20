@@ -9,11 +9,13 @@ rewards, same optimizer, same seed -- one function differs.
     python scripts/train_grpo.py --config configs/grpo_mean.yaml
     python scripts/train_grpo.py --config configs/grpo_cvar.yaml
 
-TRL's internal API for advantage computation has moved between releases. The
-override is applied defensively and the script fails loudly rather than
-silently falling back to standard GRPO, because a silent fallback would make
-the two arms of the experiment identical while still producing plausible
-numbers.
+No public TRL release exposes a small, dedicated hook for this -- advantage
+computation is inlined inside GRPOTrainer's ~600-line
+`_generate_and_score_completions`, alongside generation, tool calls and
+logging. The override binds a patched copy of that whole method
+(rsp/_trl_patches/grpo_1_10_0.py), pinned to an exact TRL version, and fails
+loudly rather than silently applying a stale patch to a mismatched TRL
+release -- see rsp/_trl_patches/README.md.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ import argparse
 import json
 import pathlib
 import sys
+import types
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -29,7 +32,9 @@ import numpy as np  # noqa: E402
 import yaml  # noqa: E402
 
 from rsp.rewards import gsm8k_reward  # noqa: E402
-from rsp.risk import RiskConfig, batch_advantages  # noqa: E402
+from rsp.risk import RiskConfig  # noqa: E402
+
+PINNED_TRL_VERSION = "1.10.0"
 
 SYSTEM_PROMPT = (
     "Solve the problem. Reason step by step, then give the final numeric "
@@ -52,37 +57,50 @@ def build_reward_fn(log_sink: list):
     return reward_fn
 
 
-def patch_advantages(trainer, cfg: RiskConfig, group_size: int):
-    """Replace GRPO's mean-baseline advantage with the configured estimator."""
-    import torch
+def patch_advantages(trainer, cfg: RiskConfig) -> None:
+    """Replace GRPO's mean-baseline advantage with the configured estimator.
 
-    target = None
-    for name in ("_compute_advantages", "compute_advantages"):
-        if hasattr(trainer, name):
-            target = name
-            break
-    if target is None:
+    Binds rsp/_trl_patches/grpo_1_10_0.py's copy of
+    `_generate_and_score_completions` onto `trainer`, rebuilt against TRL's
+    own module globals (not this script's) so every name the copied TRL code
+    relies on -- torch, nanstd, gather_object, ... -- resolves against TRL's
+    live module state rather than being re-imported by hand.
+    """
+    import trl
+    from trl.trainer import grpo_trainer as grpo_module
+
+    from rsp._trl_patches.grpo_1_10_0 import _generate_and_score_completions as patched_fn
+
+    if trl.__version__ != PINNED_TRL_VERSION:
         raise RuntimeError(
-            "Could not locate TRL's advantage hook on GRPOTrainer. Inspect "
-            "trl.GRPOTrainer for the current method name and update "
-            "patch_advantages -- do not run the experiment until this is fixed, "
-            "or the risk arm will silently be standard GRPO."
+            f"rsp's GRPO advantage patch is a full-method copy written against "
+            f"trl=={PINNED_TRL_VERSION}, but trl=={trl.__version__} is installed. "
+            f"Do not run the risk arms until rsp/_trl_patches/grpo_1_10_0.py has "
+            f"been re-diffed and updated for this version (see "
+            f"rsp/_trl_patches/README.md) -- a version mismatch here means the "
+            f"patch may silently disagree with the running TRL internals."
+        )
+    if trainer.multi_objective_aggregation != "sum_then_normalize":
+        raise RuntimeError(
+            "rsp's GRPO advantage patch only implements the 'sum_then_normalize' "
+            f"branch (this repo uses one combined reward function); trainer has "
+            f"multi_objective_aggregation={trainer.multi_objective_aggregation!r}"
         )
 
-    def _risk_advantages(rewards, *args, **kwargs):
-        flat = rewards.detach().float().cpu().numpy().reshape(-1)
-        if flat.size % group_size != 0:
-            raise RuntimeError(
-                f"reward tensor of size {flat.size} is not divisible by group "
-                f"size {group_size}; check num_generations"
-            )
-        grouped = flat.reshape(-1, group_size)
-        adv = batch_advantages(grouped, cfg).reshape(-1)
-        return torch.as_tensor(adv, dtype=rewards.dtype, device=rewards.device).view_as(rewards)
+    rebound = types.FunctionType(
+        patched_fn.__code__,
+        grpo_module.__dict__,
+        patched_fn.__name__,
+        patched_fn.__defaults__,
+        patched_fn.__closure__,
+    )
+    rebound.__kwdefaults__ = patched_fn.__kwdefaults__
 
-    setattr(trainer, target, _risk_advantages)
-    print(f"[rsp] patched {target} -> estimator={cfg.estimator} "
-          f"alpha={cfg.alpha} beta={cfg.beta} lambda={cfg.lambda_risk}")
+    trainer._rsp_risk_cfg = cfg
+    trainer._generate_and_score_completions = types.MethodType(rebound, trainer)
+    print(f"[rsp] patched _generate_and_score_completions (trl=={PINNED_TRL_VERSION}) "
+          f"-> estimator={cfg.estimator} alpha={cfg.alpha} beta={cfg.beta} "
+          f"lambda={cfg.lambda_risk}")
 
 
 def main() -> int:
@@ -123,7 +141,7 @@ def main() -> int:
     )
 
     if risk.estimator != "mean":
-        patch_advantages(trainer, risk, group_size)
+        patch_advantages(trainer, risk)
 
     trainer.train()
     trainer.save_model(str(outdir / "final"))

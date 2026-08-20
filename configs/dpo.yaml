@@ -17,7 +17,8 @@ training:
   beta: 0.1
   max_length: 1024
   max_prompt_length: 512
-  bf16: true
+  # T4 (Turing, sm_75) has no bf16 tensor-core support; fp16 is native there.
+  fp16: true
   logging_steps: 10
   save_strategy: "no"
   seed: 0

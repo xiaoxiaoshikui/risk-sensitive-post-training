@@ -21,9 +21,11 @@ training:
   learning_rate: 2.0e-4
   lr_scheduler_type: cosine
   warmup_ratio: 0.03
-  bf16: true
+  # T4 (Turing, sm_75) has no bf16 tensor-core support -- bf16 falls back to
+  # a much slower path there. fp16 is what T4 is actually built for.
+  fp16: true
   max_length: 1024
-  logging_steps: 10
+  logging_steps: 2  # temporarily lowered from 10 for fast per-step timing feedback while diagnosing a stall
   save_strategy: "no"
   seed: 0
   # trl>=1.x defaults SFTConfig to loss_type="chunked_nll", a memory-saving

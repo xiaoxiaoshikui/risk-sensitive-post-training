@@ -29,7 +29,8 @@ training:
   learning_rate: 1.0e-6
   beta: 0.04
   temperature: 0.9
-  bf16: true
+  # T4 (Turing, sm_75) has no bf16 tensor-core support; fp16 is native there.
+  fp16: true
   logging_steps: 5
   save_strategy: "no"
   seed: 0

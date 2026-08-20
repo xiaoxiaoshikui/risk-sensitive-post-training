@@ -1,6 +1,12 @@
 # Sourced by the stageN scripts. Not meant to be run directly.
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
+# Kaggle captures stdout through a pipe, not a TTY, so Python's default block
+# buffering can sit on minutes of training output before flushing it -- from
+# the log viewer this is indistinguishable from actually being stuck. Force
+# unbuffered output so `kernels logs` reflects real progress.
+export PYTHONUNBUFFERED=1
+
 ensure_deps() {
   pip install -r requirements.txt -q
 }

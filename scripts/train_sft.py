@@ -22,8 +22,10 @@ def main() -> int:
     args = ap.parse_args()
     conf = yaml.safe_load(pathlib.Path(args.config).read_text())
 
+    import torch
     from datasets import load_dataset
     from peft import LoraConfig
+    from transformers import AutoModelForCausalLM
     from trl import SFTConfig, SFTTrainer
 
     ds = load_dataset(conf["dataset"], conf.get("dataset_config"), split=conf["split"])
@@ -41,12 +43,23 @@ def main() -> int:
         ]}
 
     ds = ds.map(to_chat, remove_columns=ds.column_names)
+
+    # Loaded explicitly (rather than handing SFTTrainer the model name and
+    # letting it load internally) so a stall in the weight download or in
+    # moving the model onto the GPU shows up as a specific, timestamped log
+    # line instead of silence indistinguishable from a hang anywhere else in
+    # SFTTrainer's construction.
+    print(f"[rsp] loading base model {conf['model']}...", flush=True)
+    model = AutoModelForCausalLM.from_pretrained(conf["model"], dtype=torch.bfloat16)
+    print("[rsp] base model loaded", flush=True)
+
     trainer = SFTTrainer(
-        model=conf["model"],
+        model=model,
         args=SFTConfig(output_dir=conf["output_dir"], **conf["training"]),
         train_dataset=ds,
         peft_config=LoraConfig(**conf["lora"]) if conf.get("lora") else None,
     )
+    print("[rsp] SFTTrainer constructed, starting train()", flush=True)
     trainer.train()
     trainer.save_model(conf["output_dir"] + "/final")
     return 0

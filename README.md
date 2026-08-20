@@ -114,6 +114,42 @@ python scripts/compare.py runs/grpo_mean/eval runs/grpo_cvar/eval
 rates are not estimable from one greedy sample, so tail statistics are
 undefined without it.
 
+On a rented single-GPU box (vast.ai, RunPod), [`scripts/run_all.sh`](scripts/run_all.sh)
+runs the whole sequence unattended -- start it inside `tmux` so an SSH drop
+doesn't kill an hours-long job.
+
+### Free GPU (Kaggle)
+
+A Kaggle GPU notebook (T4, free, 30 GPU-hours/week, ~9-12h per session) is
+enough for this at no cost, but one session isn't long enough for the whole
+pipeline, so [`scripts/kaggle/`](scripts/kaggle) splits it into stages that
+each pick up where the last left off:
+
+| Script | Produces |
+|---|---|
+| `stage1_setup_sft.sh` | deps, sanity checks, `runs/sft/final` |
+| `stage2_dpo.sh` | `runs/dpo/final` |
+| `stage3_grpo.sh mean` / `cvar` / `entropic` | one `runs/grpo_<arm>/final` per call |
+| `stage4_eval_compare.sh` | `runs/*/eval/report.json`, `runs/compare_*.json` |
+
+Kaggle wipes `/kaggle/working` between sessions, so `runs/` has to be carried
+forward by hand:
+
+1. New notebook -> Settings -> Accelerator: GPU T4 x2, Internet: on.
+2. `!git clone https://github.com/xiaoxiaoshikui/risk-sensitive-post-training && cd risk-sensitive-post-training`
+3. Run the next stage script for this session (`!bash scripts/kaggle/stageN_....sh`).
+4. Before the session ends: **Save Version -> Save & Run All (Commit)**. The
+   `runs/` directory under `/kaggle/working` becomes that version's Output.
+5. Next session: create/open a notebook, **Add Input -> Notebook Output
+   Files** and pick the previous version, then copy its `runs/` back in
+   before running the next stage, e.g.
+   `!cp -r /kaggle/input/<prev-notebook>/runs .`
+6. Repeat per stage. Each `stage3_grpo.sh <arm>` call is its own session so a
+   timeout mid-arm only costs that one arm, not the other two.
+
+Each stage script skips work whose output already exists, so re-running a
+stage after copying `runs/` back in is safe.
+
 ## Tests
 
 ```bash

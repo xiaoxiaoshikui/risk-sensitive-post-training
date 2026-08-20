@@ -1,0 +1,35 @@
+# Treatment arm: entropic risk. Smooth alternative to CVaR, uses every rollout.
+model: runs/sft/final
+dataset: openai/gsm8k
+dataset_config: main
+split: train
+question_field: question
+answer_field: answer
+max_samples: 2000
+output_dir: runs/grpo_entropic
+
+risk:
+  estimator: entropic
+  beta: 2.0            # risk aversion; beta -> 0 recovers the mean arm
+  lambda_risk: 1.0
+
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  task_type: CAUSAL_LM
+
+training:
+  num_train_epochs: 1
+  per_device_train_batch_size: 8
+  gradient_accumulation_steps: 2
+  num_generations: 8
+  max_completion_length: 512
+  learning_rate: 1.0e-6
+  beta: 0.04
+  temperature: 0.9
+  bf16: true
+  logging_steps: 5
+  save_strategy: "no"
+  seed: 0

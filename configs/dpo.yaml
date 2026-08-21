@@ -15,10 +15,15 @@ training:
   gradient_accumulation_steps: 4
   learning_rate: 5.0e-6
   beta: 0.1
+  # DPOConfig dropped the separate max_prompt_length control -- max_length now
+  # governs the whole tokenized example, with truncation_mode (default
+  # "keep_start") deciding what gets cut if it's too long.
   max_length: 1024
-  max_prompt_length: 512
-  # T4 (Turing, sm_75) has no bf16 tensor-core support; fp16 is native there.
-  fp16: true
+  # bf16 needs Ampere+ (sm_80+); native on the rented RTX 4090 (Ada, sm_89) this
+  # is tuned for, and more numerically stable than fp16 for LLM training. Not
+  # valid on Kaggle's T4 (Turing, sm_75, no bf16 tensor cores) -- flip to
+  # fp16 there.
+  bf16: true
   logging_steps: 10
   save_strategy: "no"
   seed: 0

@@ -28,6 +28,14 @@ training:
   learning_rate: 1.0e-6
   beta: 0.04                  # TRL's KL coefficient, unrelated to risk.beta
   temperature: 0.9
+  # Rollout generation (the dominant cost -- G=8 completions per prompt every
+  # step) via TRL's built-in vLLM integration instead of plain
+  # model.generate(); colocate mode runs vLLM in the same process/GPU as
+  # training, no separate server needed. vllm_gpu_memory_utilization left at
+  # its 0.3 default -- plenty of headroom for a 1.5B model + LoRA on a 24GB
+  # card, leaving the rest for the training side.
+  use_vllm: true
+  vllm_mode: colocate
   # T4 (Turing, sm_75) has no bf16 tensor-core support; fp16 is native there.
   fp16: true
   logging_steps: 5

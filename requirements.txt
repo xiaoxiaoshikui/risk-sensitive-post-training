@@ -13,6 +13,13 @@ peft>=0.13
 torchao>=0.16.0
 datasets>=3.0
 accelerate>=1.0
+# For GRPO rollout generation (configs/grpo_*.yaml set use_vllm: true) and for
+# faster batch generation in build_pairs.py/evaluate.py. Heavy, version-picky
+# dependency -- if it conflicts with the pinned trl/transformers/torch above,
+# that's a real compatibility fight, not a quick fix; see
+# rsp/_trl_patches/README.md for how the trl pin was chosen if vllm forces a
+# different one.
+vllm>=0.6
 numpy>=1.26
 pyyaml>=6.0
 pytest>=8.0

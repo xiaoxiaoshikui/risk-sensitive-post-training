@@ -11,10 +11,16 @@ if [ ! -d runs/sft/final ]; then
   exit 1
 fi
 
-if [ -f data/dpo_pairs.jsonl ]; then
-  echo "[skip] data/dpo_pairs.jsonl already exists"
+if [ -f data/dpo_pairs.jsonl ] && [ ! -f data/dpo_pairs.jsonl.progress ]; then
+  echo "[skip] data/dpo_pairs.jsonl already complete"
 else
-  python scripts/build_pairs.py --config configs/dpo.yaml
+  # --limit 500, not build_pairs.py's default 2000: measured throughput on a
+  # T4 was ~33s/prompt (bf16, before the fp16 fix), so 2000 prompts risks
+  # exceeding a Kaggle session's wall-clock cap -- this happened once
+  # already, losing everything because the old code only wrote output at
+  # the very end. build_pairs.py now writes incrementally and resumes from
+  # data/dpo_pairs.jsonl.progress if this gets cut off again regardless.
+  python scripts/build_pairs.py --config configs/dpo.yaml --limit 500
 fi
 
 if [ -d runs/dpo/final ]; then

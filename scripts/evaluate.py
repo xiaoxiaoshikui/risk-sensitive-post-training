@@ -44,7 +44,8 @@ def main() -> int:
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
     model = AutoModelForCausalLM.from_pretrained(
-        args.model, torch_dtype=torch.bfloat16, device_map="auto").eval()
+        # T4 (Turing, sm_75) has no bf16 tensor cores; fp16 is native there.
+        args.model, torch_dtype=torch.float16, device_map="auto").eval()
     torch.manual_seed(args.seed)
 
     correct = np.zeros((len(ds), args.k), dtype=bool)

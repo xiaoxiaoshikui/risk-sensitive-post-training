@@ -47,45 +47,63 @@ def main() -> int:
     ds = load_dataset(args.dataset, args.dataset_config, split=args.split)
     ds = ds.select(range(min(args.limit, len(ds))))
 
+    # Resumable: a session can be cut off (Kaggle sessions have a wall-clock
+    # cap) long before `limit` prompts are done. Progress is written after
+    # every prompt, not batched at the end, so a resumed run picks up right
+    # after the last completed prompt instead of losing everything generated
+    # so far.
+    progress_path = out_path.with_suffix(out_path.suffix + ".progress")
+    start_idx = int(progress_path.read_text()) if progress_path.exists() else 0
+    if start_idx:
+        print(f"[rsp] resuming from prompt {start_idx} ({out_path} already has partial output)",
+              file=sys.stderr)
+    else:
+        out_path.write_text("", encoding="utf-8")  # fresh start: truncate any stale file
+
     tok = AutoTokenizer.from_pretrained(model_path)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
+    # T4 (Turing, sm_75) has no bf16 tensor cores; fp16 is native there.
     model = AutoModelForCausalLM.from_pretrained(
-        model_path, torch_dtype=torch.bfloat16, device_map="auto").eval()
+        model_path, torch_dtype=torch.float16, device_map="auto").eval()
 
     rng = random.Random(args.seed)
     torch.manual_seed(args.seed)
 
-    pairs = []
-    for i, row in enumerate(ds):
-        messages = [{"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": row["question"]}]
-        prompt = tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        enc = tok([prompt] * args.k, return_tensors="pt", padding=True).to(model.device)
-        with torch.no_grad():
-            gen = model.generate(**enc, do_sample=True, temperature=args.temperature,
-                                  max_new_tokens=args.max_new_tokens,
-                                  pad_token_id=tok.pad_token_id)
-        texts = [tok.decode(s[enc["input_ids"].shape[1]:], skip_special_tokens=True)
-                 for s in gen]
+    n_pairs = sum(1 for _ in open(out_path, encoding="utf-8")) if start_idx else 0
+    remaining = ds.select(range(start_idx, len(ds)))
+    with open(out_path, "a", encoding="utf-8") as f:
+        for i, row in enumerate(remaining, start=start_idx):
+            messages = [{"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": row["question"]}]
+            prompt = tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            enc = tok([prompt] * args.k, return_tensors="pt", padding=True).to(model.device)
+            with torch.no_grad():
+                gen = model.generate(**enc, do_sample=True, temperature=args.temperature,
+                                      max_new_tokens=args.max_new_tokens,
+                                      pad_token_id=tok.pad_token_id)
+            texts = [tok.decode(s[enc["input_ids"].shape[1]:], skip_special_tokens=True)
+                     for s in gen]
 
-        correct = [t for t in texts if gsm8k_reward(t, row["answer"]).correct]
-        incorrect = [t for t in texts if not gsm8k_reward(t, row["answer"]).correct]
-        if not correct or not incorrect:
-            continue
+            correct = [t for t in texts if gsm8k_reward(t, row["answer"]).correct]
+            incorrect = [t for t in texts if not gsm8k_reward(t, row["answer"]).correct]
+            if correct and incorrect:
+                pair = {
+                    "prompt": messages,
+                    "chosen": [{"role": "assistant", "content": rng.choice(correct)}],
+                    "rejected": [{"role": "assistant", "content": rng.choice(incorrect)}],
+                }
+                f.write(json.dumps(pair) + "\n")
+                f.flush()
+                n_pairs += 1
 
-        pairs.append({
-            "prompt": messages,
-            "chosen": [{"role": "assistant", "content": rng.choice(correct)}],
-            "rejected": [{"role": "assistant", "content": rng.choice(incorrect)}],
-        })
+            progress_path.write_text(str(i + 1), encoding="utf-8")
+            if (i + 1) % 25 == 0:
+                print(f"  {i+1}/{len(ds)} prompts, {n_pairs} pairs so far", file=sys.stderr)
 
-        if (i + 1) % 25 == 0:
-            print(f"  {i+1}/{len(ds)} prompts, {len(pairs)} pairs so far", file=sys.stderr)
-
-    out_path.write_text("\n".join(json.dumps(p) for p in pairs), encoding="utf-8")
-    print(f"[rsp] wrote {len(pairs)} pairs -> {out_path}")
+    progress_path.unlink(missing_ok=True)
+    print(f"[rsp] wrote {n_pairs} pairs -> {out_path}")
     return 0
 
 

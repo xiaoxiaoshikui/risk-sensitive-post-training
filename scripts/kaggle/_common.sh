@@ -9,6 +9,18 @@ export PYTHONUNBUFFERED=1
 
 ensure_deps() {
   pip install -r requirements.txt -q
+  # vllm pulls in torchaudio/torchcodec for multimodal audio/video decoding this
+  # repo never touches (GSM8K is text-only). Both ship compiled extensions
+  # built against a specific torch build; when pip's resolver lands on a
+  # different torch than that build targeted -- which happened in practice,
+  # since vllm's own torch pin can differ from the preinstalled one -- their
+  # .so fails to load, and that's a *hard* crash (OSError / RuntimeError, not
+  # ImportError) that propagates straight through transformers' AutoProcessor
+  # lazy-load and vllm's own sampling_params import, breaking `import trl` and
+  # `import vllm` entirely even though nothing here uses either package.
+  # Uninstalling is safe: transformers/vllm both degrade an ImportError (a
+  # clean "not installed") to "feature unavailable", just not a broken one.
+  pip uninstall -y torchaudio torchcodec -q 2>/dev/null || true
 }
 
 gpu_check() {

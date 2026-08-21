@@ -18,8 +18,14 @@ accelerate>=1.0
 # dependency -- if it conflicts with the pinned trl/transformers/torch above,
 # that's a real compatibility fight, not a quick fix; see
 # rsp/_trl_patches/README.md for how the trl pin was chosen if vllm forces a
-# different one.
-vllm>=0.6
+# different one. Upper-bounded at 0.26.0: trl==1.10.0 only declares support up
+# to that version and warns (not raises) above it -- resolving an unbounded
+# vllm>=0.6 pulled 0.27.1 in practice, which also drags torch to a newer CUDA
+# build than the rest of the stack (torchaudio/torchcodec, present from the
+# base image, are left at the old build and fail to import -- harmless since
+# this repo is text-only, but `pip uninstall torchaudio torchcodec` if it
+# happens again).
+vllm>=0.6,<=0.26.0
 numpy>=1.26
 pyyaml>=6.0
 pytest>=8.0

@@ -31,6 +31,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import numpy as np  # noqa: E402
 import yaml  # noqa: E402
 
+from rsp.checkpoint_utils import fix_saved_base_model_path, resolved_checkpoint  # noqa: E402
 from rsp.rewards import gsm8k_reward  # noqa: E402
 from rsp.risk import RiskConfig  # noqa: E402
 
@@ -132,19 +133,30 @@ def main() -> int:
     group_size = train_args.num_generations
 
     reward_log: list = []
-    trainer = GRPOTrainer(
-        model=conf["model"],
-        args=train_args,
-        train_dataset=ds,
-        reward_funcs=build_reward_fn(reward_log),
-        peft_config=LoraConfig(**conf["lora"]) if conf.get("lora") else None,
-    )
+    # GRPOTrainer resolves model=<path> via AutoConfig.from_pretrained, which
+    # can't load a bare LoRA adapter directory (runs/sft/final has no
+    # config.json) the way AutoModelForCausalLM.from_pretrained can -- merge
+    # onto the base model first. See rsp/checkpoint_utils.py.
+    with resolved_checkpoint(conf["model"]) as model_path:
+        trainer = GRPOTrainer(
+            model=model_path,
+            args=train_args,
+            train_dataset=ds,
+            reward_funcs=build_reward_fn(reward_log),
+            peft_config=LoraConfig(**conf["lora"]) if conf.get("lora") else None,
+        )
 
     if risk.estimator != "mean":
         patch_advantages(trainer, risk)
 
     trainer.train()
-    trainer.save_model(str(outdir / "final"))
+    final_dir = str(outdir / "final")
+    trainer.save_model(final_dir)
+    # save_model() recorded the merged temp dir (already deleted) as this
+    # adapter's base -- repoint it at its immediate parent checkpoint, *not*
+    # that parent's own base (which would silently drop the SFT stage from
+    # every future load). See fix_saved_base_model_path.
+    fix_saved_base_model_path(final_dir, conf["model"])
 
     arr = np.array(reward_log, dtype=bool)
     (outdir / "run.json").write_text(json.dumps({

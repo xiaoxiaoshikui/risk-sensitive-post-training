@@ -110,11 +110,19 @@ def main() -> int:
     ap.add_argument("--out", default=None)
     ap.add_argument("--seed", type=int, default=None,
                      help="override configs/*.yaml's training.seed, e.g. for multi-seed replicates")
+    ap.add_argument("--num-generations", type=int, default=None,
+                     help="override the group size G (configs/*.yaml's training.num_generations). "
+                          "Also scales per_device_train_batch_size to match 1:1, since these configs "
+                          "keep exactly one group per device batch -- raising G without raising the "
+                          "batch size would split a group across gradient-accumulation steps.")
     args = ap.parse_args()
 
     conf = yaml.safe_load(pathlib.Path(args.config).read_text())
     if args.seed is not None:
         conf["training"]["seed"] = args.seed
+    if args.num_generations is not None:
+        conf["training"]["num_generations"] = args.num_generations
+        conf["training"]["per_device_train_batch_size"] = args.num_generations
     risk = RiskConfig(**conf["risk"])
     outdir = pathlib.Path(args.out or conf["output_dir"])
     outdir.mkdir(parents=True, exist_ok=True)

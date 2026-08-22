@@ -185,6 +185,14 @@ drift is a loud CI failure instead of a quiet wrong gradient.
 Single GPU, LoRA throughout. Qwen2.5-1.5B-Instruct on GSM8K; roughly a few
 hours per arm on one 4090 or A100.
 
+A [`Dockerfile`](Dockerfile) is included for a reproducible environment --
+`docker build --platform linux/amd64 -t risk-sensitive-post-training .` runs
+the same CPU-only test suite as a build step, then `docker run --gpus all
+risk-sensitive-post-training python scripts/train_sft.py --config
+configs/sft.yaml` on a CUDA host with the NVIDIA Container Toolkit. For
+daemonless HPC nodes, `apptainer pull docker://...` is the standard path for
+running the same image under Slurm.
+
 ```bash
 pip install -r requirements.txt
 

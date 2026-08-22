@@ -108,9 +108,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--seed", type=int, default=None,
+                     help="override configs/*.yaml's training.seed, e.g. for multi-seed replicates")
     args = ap.parse_args()
 
     conf = yaml.safe_load(pathlib.Path(args.config).read_text())
+    if args.seed is not None:
+        conf["training"]["seed"] = args.seed
     risk = RiskConfig(**conf["risk"])
     outdir = pathlib.Path(args.out or conf["output_dir"])
     outdir.mkdir(parents=True, exist_ok=True)

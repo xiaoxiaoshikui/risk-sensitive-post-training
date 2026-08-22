@@ -8,6 +8,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 export PYTHONUNBUFFERED=1
 
 ensure_deps() {
+  # The base image's preinstalled torch build doesn't always match the CUDA
+  # runtime vllm's compiled kernels were built against (seen in practice as
+  # `ImportError: libcudart.so.13: cannot open shared object file` deep in
+  # `import vllm`) -- pip's resolver treats an already-installed torch as
+  # satisfying requirements.txt's `torch>=2.4` and leaves it alone, so it
+  # never gets re-picked as part of a coherent, vllm-compatible set.
+  # Uninstalling first forces one resolution over torch+vllm+everything
+  # together, which is what actually produces a matching pair.
+  pip uninstall -y torch torchvision -q 2>/dev/null || true
   pip install -r requirements.txt -q
   # vllm pulls in torchaudio/torchcodec for multimodal audio/video decoding this
   # repo never touches (GSM8K is text-only). Both ship compiled extensions

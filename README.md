@@ -101,6 +101,8 @@ Single seed so far; a 3-seed replication of the three GRPO arms is in
 progress to confirm the pattern holds — this table gets updated when it
 finishes, not rewritten.
 
+![Mean and worst-decile accuracy across all five arms, with 95% CIs -- no estimator clears the GRPO-mean control on either metric](assets/results.png)
+
 | Run | mean acc | cvar acc (α=0.25) | worst decile | zero-solve | fmt viol |
 |---|---|---|---|---|---|
 | SFT | 0.470 | 0.093 | 0.030 | 0.020 | 0.013 |

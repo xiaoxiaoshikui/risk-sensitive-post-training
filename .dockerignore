@@ -1,0 +1,11 @@
+.git
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+runs/
+data/*.jsonl
+wandb/
+*.egg-info/
+.DS_Store
+assets/
